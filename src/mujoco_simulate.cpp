@@ -40,7 +40,8 @@ extern "C" {
 #include <unistd.h>
 }
 
-namespace {
+namespace
+{
 namespace mj = ::mujoco;
 namespace mju = ::mujoco::sample_util;
 
@@ -373,7 +374,6 @@ void PhysicsLoop(mj::Simulate& sim) {
     }  // release std::lock_guard<std::mutex>
   }
 }
-}  // namespace
 
 //-------------------------------------- physics_thread --------------------------------------------
 
@@ -408,54 +408,55 @@ void PhysicsThread(mj::Simulate* sim, std::string filename) {
   mj_deleteData(d);
   mj_deleteModel(m);
 }
+}  // namespace
 
 //------------------------------------------ main --------------------------------------------------
 
-// run event loop
-int main(int argc, char** argv) {
+// // run event loop
+// int main(int argc, char** argv) {
 
-  rclcpp::init(argc, argv);
-  auto simulation_node = std::make_shared<rclcpp::Node>("mujoco_simulate");
-  simulation_node->declare_parameter("model_path", "");
-  std::string filename = simulation_node->get_parameter("model_path").as_string();
+//   rclcpp::init(argc, argv);
+//   auto simulation_node = std::make_shared<rclcpp::Node>("mujoco_simulate");
+//   simulation_node->declare_parameter("model_path", "");
+//   std::string filename = simulation_node->get_parameter("model_path").as_string();
 
-  // print version, check compatibility
-  std::printf("MuJoCo version %s\n", mj_versionString());
-  if (mjVERSION_HEADER!=mj_version()) {
-    mju_error("Headers and library have different versions");
-  }
+//   // print version, check compatibility
+//   std::printf("MuJoCo version %s\n", mj_versionString());
+//   if (mjVERSION_HEADER!=mj_version()) {
+//     mju_error("Headers and library have different versions");
+//   }
 
-  // scan for libraries in the plugin directory to load additional plugins
-  scanPluginLibraries();
+//   // scan for libraries in the plugin directory to load additional plugins
+//   scanPluginLibraries();
 
-  mjvCamera cam;
-  mjv_defaultCamera(&cam);
+//   mjvCamera cam;
+//   mjv_defaultCamera(&cam);
 
-  mjvOption opt;
-  mjv_defaultOption(&opt);
+//   mjvOption opt;
+//   mjv_defaultOption(&opt);
 
-  mjvPerturb pert;
-  mjv_defaultPerturb(&pert);
+//   mjvPerturb pert;
+//   mjv_defaultPerturb(&pert);
 
-  // simulate object encapsulates the UI
-  auto sim = std::make_unique<mj::Simulate>(
-      std::make_unique<mj::GlfwAdapter>(),
-      &cam, &opt, &pert, /* is_passive = */ false
-  );
+//   // simulate object encapsulates the UI
+//   auto sim = std::make_unique<mj::Simulate>(
+//       std::make_unique<mj::GlfwAdapter>(),
+//       &cam, &opt, &pert, /* is_passive = */ false
+//   );
 
-  // const char* filename = nullptr;
-  // if (argc >  1) {
-  //   filename = argv[1];
-  // }
+//   // const char* filename = nullptr;
+//   // if (argc >  1) {
+//   //   filename = argv[1];
+//   // }
 
-  // start physics thread
-  std::thread physicsthreadhandle(&PhysicsThread, sim.get(), filename);
+//   // start physics thread
+//   std::thread physicsthreadhandle(&PhysicsThread, sim.get(), filename);
 
-  // start simulation UI loop (blocking call)
-  sim->RenderLoop();
-  physicsthreadhandle.join();
+//   // start simulation UI loop (blocking call)
+//   sim->RenderLoop();
+//   physicsthreadhandle.join();
 
-  rclcpp::shutdown();
+//   rclcpp::shutdown();
 
-  return 0;
-}
+//   return 0;
+// }
