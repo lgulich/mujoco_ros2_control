@@ -14,16 +14,16 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <vector>
 
-#include <hardware_interface/system_interface.hpp>
-#include <hardware_interface/types/hardware_interface_return_values.hpp>
 #include <hardware_interface/handle.hpp>
 #include <hardware_interface/hardware_info.hpp>
+#include <hardware_interface/system_interface.hpp>
+#include <hardware_interface/types/hardware_interface_return_values.hpp>
 #include <rclcpp/macros.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp>
@@ -32,70 +32,69 @@
 #include <mujoco/mujoco.h>
 
 // Pull in the Simulate class and PhysicsThread/RenderLoop declarations:
-#include "simulate.h"     // must be on your include path, handled by CMake
-#include "glfw_adapter.h" // for mj::GlfwAdapter
+#include "glfw_adapter.h"  // for mj::GlfwAdapter
+#include "simulate.h"      // must be on your include path, handled by CMake
 
 namespace mujoco_ros2_simulation
 {
-  class MujocoSystemInterface : public hardware_interface::SystemInterface
-  {
-  public:
+class MujocoSystemInterface : public hardware_interface::SystemInterface
+{
+public:
+  MujocoSystemInterface();
+  ~MujocoSystemInterface() override;
 
-    MujocoSystemInterface();
-    ~MujocoSystemInterface() override;
+  hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo& info) override;
+  std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
+  std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
-    hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo &info) override;
-    std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
-    std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
+  hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
+  hardware_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
 
-    hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State &previous_state) override;
-    hardware_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
+  hardware_interface::return_type read(const rclcpp::Time& time, const rclcpp::Duration& period) override;
+  hardware_interface::return_type write(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
-    hardware_interface::return_type read(const rclcpp::Time &time, const rclcpp::Duration &period) override;
-    hardware_interface::return_type write(const rclcpp::Time &time, const rclcpp::Duration &period) override;
+private:
+  // For spinning the physics simulation
+  void PhysicsLoop(mujoco::Simulate& sim);
 
-  private:
+  // System information
+  hardware_interface::HardwareInfo system_info_;
+  std::string model_path_;
 
-    // For spinning the physics simulation
-    void PhysicsLoop(mujoco::Simulate& sim);
+  // MuJoCo data pointers
+  mjModel* mj_model_{ nullptr };
+  mjData* mj_data_{ nullptr };
 
-    // System information
-    hardware_interface::HardwareInfo system_info_;
-    std::string model_path_;
+  // For rendering
+  mjvCamera cam_;
+  mjvOption opt_;
+  mjvPerturb pert_;
 
-    // MuJoCo data pointers
-    mjModel *mj_model_{nullptr};
-    mjData *mj_data_{nullptr};
+  // Primary simulate object
+  std::unique_ptr<mujoco::Simulate> sim_;
 
-    // For rendering
-    mjvCamera cam_;
-    mjvOption opt_;
-    mjvPerturb pert_;
+  // Threads for rendering physics and the UI window
+  std::thread physics_thread_;
+  std::thread ui_thread_;
 
-    // Primary simulate object
-    std::unique_ptr<mujoco::Simulate> sim_;
+  // Mutex used inside simulate.h for protecting model/data, we keep a reference
+  // here to protect access to shared data.
+  std::recursive_mutex* sim_mutex_{ nullptr };
 
-    // Threads for rendering physics and the UI window
-    std::thread physics_thread_;
-    std::thread ui_thread_;
+  // Joints and actuator data
+  // TODO: Break these and maybe recreate jointstate objects
+  size_t n_joints_{ 0 };
+  std::vector<std::string> joint_names_;
 
-    // Mutex used inside simulate.h for protecting model/data, we keep a reference here
-    // to protect access to shared data.
-    std::recursive_mutex *sim_mutex_{nullptr};
+  std::vector<double> hw_positions_;
+  std::vector<double> hw_velocities_;
+  std::vector<double> hw_efforts_;
+  std::vector<double> hw_commands_;  // Currently just position commands
 
-    // Joints and actuator data
-    // TODO: Break these and maybe recreate jointstate objects
-    size_t n_joints_{0};
-    std::vector<std::string> joint_names_;
+  // And then put these into them, since a bunch of vectors is a little nerve
+  // wracking
+  std::vector<int> muj_joint_id_;
+  std::vector<int> muj_actuator_id_;
+};
 
-    std::vector<double> hw_positions_;
-    std::vector<double> hw_velocities_;
-    std::vector<double> hw_efforts_;
-    std::vector<double> hw_commands_; // Currently just position commands
-
-    // And then put these into them, since a bunch of vectors is a little nerve wracking
-    std::vector<int> muj_joint_id_;
-    std::vector<int> muj_actuator_id_;
-  };
-
-} // end namespace
+}  // namespace mujoco_ros2_simulation
