@@ -359,6 +359,23 @@ hardware_interface::CallbackReturn MujocoSystemInterface::on_init(const hardware
   register_sensors(info);
   set_initial_pose();
 
+  // Construct and start the ROS node spinning
+  executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
+  mujoco_node_ = std::make_shared<rclcpp::Node>("mujoco_node");
+  executor_->add_node(mujoco_node_);
+  spin_executor_ = true;
+  auto spin = [this]() {
+    RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"), "Starting the mujoco node...");
+    while (rclcpp::ok() && spin_executor_)
+    {
+      executor_->spin();
+    }
+  };
+  executor_thread_ = std::thread(spin);
+
+  // Time publisher will be pushed from the physics_thread_
+  clock_publisher_ = mujoco_node_->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 1);
+
   // When the interface is activated, we start the physics engine.
   physics_thread_ = std::thread([this]() {
     // Load the simulation and do an initial forward pass
@@ -538,7 +555,12 @@ MujocoSystemInterface::on_deactivate(const rclcpp_lifecycle::State& /*previous_s
   RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"),
               "Deactivating MuJoCo hardware interface and shutting down Simulate...");
 
-  // TODO: Should we shut things down here or in the destructor?
+  // TODO: Should we shut mujoco things down here or in the destructor?
+
+  // Stop ROS
+  spin_executor_ = false;
+  executor_->cancel();
+  executor_thread_.join();
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -971,7 +993,22 @@ void MujocoSystemInterface::PhysicsLoop()
         }
       }
     }  // release std::lock_guard<std::mutex>
+
+    // Publish the clock
+    publish_clock();
   }
+}
+
+void MujocoSystemInterface::publish_clock()
+{
+  auto sim_time = mj_data_->time;
+  int32_t sim_time_sec = static_cast<int32_t>(std::floor(sim_time));
+  uint32_t sim_time_nanosec = static_cast<uint32_t>((sim_time - sim_time_sec) * 1e9);
+  rclcpp::Time sim_time_ros(sim_time_sec, sim_time_nanosec, RCL_ROS_TIME);
+
+  rosgraph_msgs::msg::Clock sim_time_msg;
+  sim_time_msg.clock = sim_time_ros;
+  clock_publisher_->publish(sim_time_msg);
 }
 
 }  // namespace mujoco_ros2_simulation

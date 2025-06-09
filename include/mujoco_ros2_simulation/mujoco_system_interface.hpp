@@ -33,6 +33,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp>
 #include <rclcpp_lifecycle/state.hpp>
+#include <rosgraph_msgs/msg/clock.hpp>
 
 #include <mujoco/mujoco.h>
 
@@ -73,6 +74,9 @@ private:
   // For spinning the physics simulation
   void PhysicsLoop();
 
+  // Converts current the mujoco data time to a ROS message to publish to /clock
+  void publish_clock();
+
   // System information
   hardware_interface::HardwareInfo system_info_;
   std::string model_path_;
@@ -89,9 +93,18 @@ private:
   // Primary simulate object
   std::unique_ptr<mujoco::Simulate> sim_;
 
-  // Threads for rendering physics and the UI window
+  // Threads for rendering physics, the UI simulation, and the ROS node
   std::thread physics_thread_;
   std::thread ui_thread_;
+
+  // Provides access to ROS interfaces for elements that require it
+  std::shared_ptr<rclcpp::Node> mujoco_node_;
+  std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;
+  std::thread executor_thread_;
+  std::atomic_bool spin_executor_;
+
+  // Primary clock publisher for the world
+  std::shared_ptr<rclcpp::Publisher<rosgraph_msgs::msg::Clock>> clock_publisher_;
 
   // Mutex used inside simulate.h for protecting model/data, we keep a reference
   // here to protect access to shared data.
