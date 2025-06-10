@@ -250,6 +250,14 @@ MujocoSystemInterface::MujocoSystemInterface() = default;
 
 MujocoSystemInterface::~MujocoSystemInterface()
 {
+  // Stop camera rendering loop
+  cameras_->close();
+
+  // Stop ROS
+  spin_executor_ = false;
+  executor_->cancel();
+  executor_thread_.join();
+
   // If sim_ is created and running, clean shut it down
   if (sim_)
   {
@@ -375,6 +383,10 @@ hardware_interface::CallbackReturn MujocoSystemInterface::on_init(const hardware
 
   // Time publisher will be pushed from the physics_thread_
   clock_publisher_ = mujoco_node_->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 1);
+
+  // Ready cameras
+  RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"), "Initializing cameras...");
+  cameras_ = std::make_unique<MujocoCameras>(mujoco_node_, sim_mutex_, mj_data_, mj_model_);
 
   // When the interface is activated, we start the physics engine.
   physics_thread_ = std::thread([this]() {
@@ -546,6 +558,9 @@ hardware_interface::CallbackReturn MujocoSystemInterface::on_activate(const rclc
   RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"),
               "Activating MuJoCo hardware interface and starting Simulate threads...");
 
+  // Start camera rendering loop
+  cameras_->init();
+
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -556,11 +571,6 @@ MujocoSystemInterface::on_deactivate(const rclcpp_lifecycle::State& /*previous_s
               "Deactivating MuJoCo hardware interface and shutting down Simulate...");
 
   // TODO: Should we shut mujoco things down here or in the destructor?
-
-  // Stop ROS
-  spin_executor_ = false;
-  executor_->cancel();
-  executor_thread_.join();
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -887,7 +897,7 @@ void MujocoSystemInterface::PhysicsLoop()
 
     {
       // lock the sim mutex
-      const std::unique_lock<std::recursive_mutex> lock(sim_->mtx);
+      const std::unique_lock<std::recursive_mutex> lock(*sim_mutex_);
 
       // run only if model is present
       if (mj_model_)

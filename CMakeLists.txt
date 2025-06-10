@@ -96,6 +96,7 @@ target_compile_options(libsimulate PRIVATE -Wno-missing-field-initializers)
 # Mujoco ROS 2 control system interface (this package)
 add_library(mujoco_ros2_simulation SHARED
     src/mujoco_system_interface.cpp
+    src/mujoco_cameras.cpp
 )
 ament_target_dependencies(mujoco_ros2_simulation
   control_toolbox
@@ -104,6 +105,7 @@ ament_target_dependencies(mujoco_ros2_simulation
   pluginlib
   rclcpp
   rclcpp_lifecycle
+  sensor_msgs
 )
 target_link_libraries(mujoco_ros2_simulation
   ${MUJOCO_LIB}

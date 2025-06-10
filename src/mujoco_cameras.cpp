@@ -21,29 +21,68 @@
 
 #include "sensor_msgs/image_encodings.hpp"
 
-namespace mujoco_ros2_control
+using namespace std::chrono_literals;
+
+namespace mujoco_ros2_simulation
 {
 
-MujocoCameras::MujocoCameras(rclcpp::Node::SharedPtr& node) : node_(node)
+MujocoCameras::MujocoCameras(rclcpp::Node::SharedPtr& node, std::recursive_mutex* sim_mutex, mjData* mujoco_data,
+                             mjModel* mujoco_model)
+  : node_(node), sim_mutex_(sim_mutex), mj_data_(mujoco_data), mj_model_(mujoco_model)
 {
+  // Add user cameras
+  register_cameras();
 }
 
-void MujocoCameras::init(mjModel* mujoco_model)
+void MujocoCameras::init()
 {
-  // initialize visualization data structures
+  // Start the rendering thread process
+  publish_images_ = true;
+  rendering_thread_ = std::thread(&MujocoCameras::update_loop, this);
+}
+
+void MujocoCameras::close()
+{
+  publish_images_ = false;
+  if (rendering_thread_.joinable())
+  {
+    rendering_thread_.join();
+  }
+
+  mjv_freeScene(&mjv_scn_);
+  mjr_freeContext(&mjr_con_);
+}
+
+void MujocoCameras::update_loop()
+{
+  // We create an offscreen context specific to this process for managing camera rendering.
+  glfwInit();
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  GLFWwindow* window = glfwCreateWindow(1, 1, "", NULL, NULL);
+  glfwMakeContextCurrent(window);
+
+  // Initialization of the context and data structures has to happen in the rendering thread
+  RCLCPP_INFO(node_->get_logger(), "Initializing rendering for cameras");
   mjv_defaultOption(&mjv_opt_);
   mjv_defaultScene(&mjv_scn_);
   mjr_defaultContext(&mjr_con_);
 
   // create scene and context
-  mjv_makeScene(mujoco_model, &mjv_scn_, 2000);
-  mjr_makeContext(mujoco_model, &mjr_con_, mjFONTSCALE_150);
+  mjv_makeScene(mj_model_, &mjv_scn_, 2000);
+  mjr_makeContext(mj_model_, &mjr_con_, mjFONTSCALE_150);
 
-  // Add user cameras
-  register_cameras(mujoco_model);
+  RCLCPP_INFO(node_->get_logger(), "Starting the camera rendering loop");
+
+  // TODO: Support rendering at different rates. For now all cameras are just publishing at 5 hz.
+  rclcpp::Rate rate(5.0);
+  while (rclcpp::ok() && publish_images_)
+  {
+    update();
+    rate.sleep();
+  }
 }
 
-void MujocoCameras::update(mjModel* mujoco_model, mjData* mujoco_data)
+void MujocoCameras::update()
 {
   // Rendering is done offscreen
   mjr_setBuffer(mjFB_OFFSCREEN, &mjr_con_);
@@ -52,8 +91,8 @@ void MujocoCameras::update(mjModel* mujoco_model, mjData* mujoco_data)
   {
     // Render simple RGB data for all cameras
     {
-      std::lock_guard<std::mutex> lg(*model_update_mutex_);
-      mjv_updateScene(mujoco_model, mujoco_data, &mjv_opt_, NULL, &camera.mjv_cam, mjCAT_ALL, &mjv_scn_);
+      std::unique_lock<std::recursive_mutex> lock(*sim_mutex_);
+      mjv_updateScene(mj_model_, mj_data_, &mjv_opt_, NULL, &camera.mjv_cam, mjCAT_ALL, &mjv_scn_);
     }
     mjr_render(camera.viewport, &mjv_scn_, &mjr_con_);
 
@@ -62,8 +101,8 @@ void MujocoCameras::update(mjModel* mujoco_model, mjData* mujoco_data)
 
     // Fix non-linear projections in the depth image and flip the data.
     // https://github.com/google-deepmind/mujoco/blob/3.2.7/python/mujoco/renderer.py#L190
-    float near = static_cast<float>(mujoco_model->vis.map.znear * mujoco_model->stat.extent);
-    float far = static_cast<float>(mujoco_model->vis.map.zfar * mujoco_model->stat.extent);
+    float near = static_cast<float>(mj_model_->vis.map.znear * mj_model_->stat.extent);
+    float far = static_cast<float>(mj_model_->vis.map.zfar * mj_model_->stat.extent);
     for (uint32_t h = 0; h < camera.height; h++)
     {
       for (uint32_t w = 0; w < camera.width; w++)
@@ -98,20 +137,16 @@ void MujocoCameras::update(mjModel* mujoco_model, mjData* mujoco_data)
   }
 }
 
-void MujocoCameras::close()
-{
-  mjv_freeScene(&mjv_scn_);
-  mjr_freeContext(&mjr_con_);
-}
-
-void MujocoCameras::register_cameras(const mjModel* mujoco_model)
+void MujocoCameras::register_cameras()
 {
   cameras_.resize(0);
-  for (auto i = 0; i < mujoco_model->ncam; ++i)
+  for (auto i = 0; i < mj_model_->ncam; ++i)
   {
-    const char* cam_name = mujoco_model->names + mujoco_model->name_camadr[i];
-    const int* cam_resolution = mujoco_model->cam_resolution + 2 * i;
-    const mjtNum cam_fovy = mujoco_model->cam_fovy[i];
+    const char* cam_name = mj_model_->names + mj_model_->name_camadr[i];
+    const int* cam_resolution = mj_model_->cam_resolution + 2 * i;
+    const mjtNum cam_fovy = mj_model_->cam_fovy[i];
+
+    RCLCPP_INFO_STREAM(node_->get_logger(), "Adding camera: " << cam_name);
 
     // Construct CameraData wrapper and set defaults
     CameraData camera;
@@ -174,4 +209,4 @@ void MujocoCameras::register_cameras(const mjModel* mujoco_model)
   }
 }
 
-}  // namespace mujoco_ros2_control
+}  // namespace mujoco_ros2_simulation

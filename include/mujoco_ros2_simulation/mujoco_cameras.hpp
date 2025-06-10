@@ -19,19 +19,20 @@
 
 #pragma once
 
-#include <string>
+#include <mutex>
+#include <thread>
 #include <vector>
 
-#include "GLFW/glfw3.h"
-#include "mujoco/mujoco.h"
-#include "rclcpp/rclcpp.hpp"
+#include <GLFW/glfw3.h>
+#include <mujoco/mujoco.h>
+#include <rclcpp/rclcpp.hpp>
 
-#include "rclcpp/node.hpp"
-#include "rclcpp/publisher.hpp"
-#include "sensor_msgs/msg/camera_info.hpp"
-#include "sensor_msgs/msg/image.hpp"
+#include <rclcpp/node.hpp>
+#include <rclcpp/publisher.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <sensor_msgs/msg/image.hpp>
 
-namespace mujoco_ros2_control
+namespace mujoco_ros2_simulation
 {
 
 struct CameraData
@@ -57,23 +58,72 @@ struct CameraData
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_pub;
 };
 
+/**
+ * @brief Wraps Mujoco cameras for publishing ROS 2 RGB-D streams.
+ *
+ * The wrapper will pull camera information from the model with the assumption that the camera is
+ * attached to a frame called `<CAMERA_NAME>_optical_frame`, which will be included in the image
+ * headers. For each camera, images/information will be published to
+ *
+ *  <CAMERA_NAME>/camera_info
+ *  <CAMERA_NAME>/color
+ *  <CAMERA_NAME>/depth
+ *
+ * Also, it is important to note that camera frame conventions for Mujoco are different than ROS's.
+ * It is important to account for that in the respective model locations.
+ *
+ * For now, image publishing rates are hardcoded to 5 hz, and are all executed in sequence.
+ */
 class MujocoCameras
 {
 public:
-  explicit MujocoCameras(rclcpp::Node::SharedPtr& node);
+  /**
+   * @brief Constructs a new MujocoCameras wrapper object.
+   *
+   * @param node Will be used to construct image publishers
+   * @param sim_mutex Provides synchronized access to the mujoco_data object for rendering
+   * @param mujoco_data Mujoco data for the simulation
+   * @param mujoco_model Mujoco model for the simulation
+   */
+  explicit MujocoCameras(rclcpp::Node::SharedPtr& node, std::recursive_mutex* sim_mutex, mjData* mujoco_data,
+                         mjModel* mujoco_model);
 
-  void init(mjModel* mujoco_model);
-  void update(mjModel* mujoco_model, mjData* mujoco_data);
+  /**
+   * @brief Starts the image processing thread in the background.
+   *
+   * The background thread will initialize its own offscreen glfw context for rendering images that is
+   * separate from the Simulate applications, as the context must be in the running thread.
+   */
+  void init();
+
+  /**
+   * @brief Stops the camera processing thread and closes the relevant objects, call before shutdown.
+   */
   void close();
-  void set_model_update_mutex(std::shared_ptr<std::mutex> model_update_mutex)
-  {
-    model_update_mutex_ = model_update_mutex;
-  };
 
 private:
-  void register_cameras(const mjModel* mujoco_model);
+  /**
+   * @brief Initializes the rendering context and starts processing at 5 hz.
+   */
+  void update_loop();
+
+  /**
+   * @brief Updates the camera images and publishes info, images, and depth maps.
+   */
+  void update();
+
+  /**
+   * @brief Parses camera information from the mujoco model.
+   */
+  void register_cameras();
 
   rclcpp::Node::SharedPtr node_;
+
+  // Ensures locked access to simulation data for rendering.
+  std::recursive_mutex* sim_mutex_{ nullptr };
+
+  mjData* mj_data_;
+  mjModel* mj_model_;
 
   // Rendering options for the cameras, currently hard coded to defaults
   mjvOption mjv_opt_;
@@ -83,7 +133,9 @@ private:
   // Containers for camera data and ROS constructs
   std::vector<CameraData> cameras_;
 
-  std::shared_ptr<std::mutex> model_update_mutex_;
+  // Camera processing thread
+  std::thread rendering_thread_;
+  std::atomic_bool publish_images_;
 };
 
-}  // namespace mujoco_ros2_control
+}  // namespace mujoco_ros2_simulation

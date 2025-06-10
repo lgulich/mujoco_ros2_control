@@ -42,6 +42,7 @@
 #include "simulate.h"      // must be on your include path, handled by CMake
 
 #include "mujoco_ros2_simulation/data.hpp"
+#include "mujoco_ros2_simulation/mujoco_cameras.hpp"
 
 namespace mujoco_ros2_simulation
 {
@@ -175,8 +176,14 @@ private:
   // Primary clock publisher for the world
   std::shared_ptr<rclcpp::Publisher<rosgraph_msgs::msg::Clock>> clock_publisher_;
 
+  // Containers for RGB-D cameras
+  std::unique_ptr<MujocoCameras> cameras_;
+
   // Mutex used inside simulate.h for protecting model/data, we keep a reference
   // here to protect access to shared data.
+  // TODO: It would be far better to put all relevant data into a single container with accessors
+  //       in a common location rather than passing around the raw pointer to the mutex, but it would
+  //       require more work to pull it out of simulate.h.
   std::recursive_mutex* sim_mutex_{ nullptr };
 
   // Data containers for the HW interface
