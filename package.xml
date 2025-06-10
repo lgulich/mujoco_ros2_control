@@ -3,9 +3,10 @@
 <package format="3">
   <name>mujoco_ros2_simulation</name>
   <version>0.0.0</version>
-  <description>Package to run mujoco with ros2 control with the standard simulate capabilities</description>
-  <maintainer email="nathan.b.dunkelberger@nasa.gov">ndunkelb</maintainer>
-  <license>TODO: License declaration</license>
+  <description>ros2_control wrapper for the Mujoco Simulate application</description>
+  <maintainer email="nathan.b.dunkelberger@nasa.gov">Nathan Dunkelberger</maintainer>
+  <maintainer email="erik.holum@nasa.gov">Erik Holum</maintainer>
+  <license>Apache License, Version 2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
@@ -15,6 +16,7 @@
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
+  <depend>sensor_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

@@ -250,6 +250,14 @@ MujocoSystemInterface::MujocoSystemInterface() = default;
 
 MujocoSystemInterface::~MujocoSystemInterface()
 {
+  // Stop camera rendering loop
+  cameras_->close();
+
+  // Stop ROS
+  spin_executor_ = false;
+  executor_->cancel();
+  executor_thread_.join();
+
   // If sim_ is created and running, clean shut it down
   if (sim_)
   {
@@ -359,6 +367,27 @@ hardware_interface::CallbackReturn MujocoSystemInterface::on_init(const hardware
   register_sensors(info);
   set_initial_pose();
 
+  // Construct and start the ROS node spinning
+  executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
+  mujoco_node_ = std::make_shared<rclcpp::Node>("mujoco_node");
+  executor_->add_node(mujoco_node_);
+  spin_executor_ = true;
+  auto spin = [this]() {
+    RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"), "Starting the mujoco node...");
+    while (rclcpp::ok() && spin_executor_)
+    {
+      executor_->spin();
+    }
+  };
+  executor_thread_ = std::thread(spin);
+
+  // Time publisher will be pushed from the physics_thread_
+  clock_publisher_ = mujoco_node_->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 1);
+
+  // Ready cameras
+  RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"), "Initializing cameras...");
+  cameras_ = std::make_unique<MujocoCameras>(mujoco_node_, sim_mutex_, mj_data_, mj_model_);
+
   // When the interface is activated, we start the physics engine.
   physics_thread_ = std::thread([this]() {
     // Load the simulation and do an initial forward pass
@@ -370,7 +399,7 @@ hardware_interface::CallbackReturn MujocoSystemInterface::on_init(const hardware
       mj_forward(mj_model_, mj_data_);
     }
     // Blocks until terminated
-    PhysicsLoop(*sim_);
+    PhysicsLoop();
   });
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -378,20 +407,159 @@ hardware_interface::CallbackReturn MujocoSystemInterface::on_init(const hardware
 
 std::vector<hardware_interface::StateInterface> MujocoSystemInterface::export_state_interfaces()
 {
-  // TODO: Keep these?
-  return std::move(state_interfaces_);
+  std::vector<hardware_interface::StateInterface> new_state_interfaces;
+
+  // Joint state interfaces
+  for (auto& joint : joint_states_)
+  {
+    // Add state interfaces for joint hardware.
+    if (auto it = joint_hw_info_.find(joint.name); it != joint_hw_info_.end())
+    {
+      for (const auto& state_if : it->second.state_interfaces)
+      {
+        if (state_if.name == hardware_interface::HW_IF_POSITION)
+        {
+          new_state_interfaces.emplace_back(joint.name, hardware_interface::HW_IF_POSITION, &joint.position);
+        }
+        else if (state_if.name == hardware_interface::HW_IF_VELOCITY)
+        {
+          new_state_interfaces.emplace_back(joint.name, hardware_interface::HW_IF_VELOCITY, &joint.velocity);
+        }
+        else if (state_if.name == hardware_interface::HW_IF_EFFORT)
+        {
+          new_state_interfaces.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &joint.effort);
+        }
+      }
+    }
+  }
+
+  // Add state interfaces for fts sensors
+  for (auto& sensor : ft_sensor_data_)
+  {
+    if (auto it = sensors_hw_info_.find(sensor.name); it != sensors_hw_info_.end())
+    {
+      for (const auto& state_if : it->second.state_interfaces)
+      {
+        if (state_if.name == "force.x")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.force.data.x());
+        }
+        else if (state_if.name == "force.y")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.force.data.y());
+        }
+        else if (state_if.name == "force.z")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.force.data.z());
+        }
+        else if (state_if.name == "torque.x")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.torque.data.x());
+        }
+        else if (state_if.name == "torque.y")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.torque.data.y());
+        }
+        else if (state_if.name == "torque.z")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.torque.data.z());
+        }
+      }
+    }
+  }
+
+  // Add state interfaces for IMU sensors
+  for (auto& sensor : imu_sensor_data_)
+  {
+    if (auto it = sensors_hw_info_.find(sensor.name); it != sensors_hw_info_.end())
+    {
+      for (const auto& state_if : it->second.state_interfaces)
+      {
+        if (state_if.name == "orientation.x")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.orientation.data.x());
+        }
+        else if (state_if.name == "orientation.y")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.orientation.data.y());
+        }
+        else if (state_if.name == "orientation.z")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.orientation.data.z());
+        }
+        else if (state_if.name == "orientation.w")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.orientation.data.w());
+        }
+        else if (state_if.name == "angular_velocity.x")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.angular_velocity.data.x());
+        }
+        else if (state_if.name == "angular_velocity.y")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.angular_velocity.data.y());
+        }
+        else if (state_if.name == "angular_velocity.z")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.angular_velocity.data.z());
+        }
+        else if (state_if.name == "linear_acceleration.x")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.linear_acceleration.data.x());
+        }
+        else if (state_if.name == "linear_acceleration.y")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.linear_acceleration.data.y());
+        }
+        else if (state_if.name == "linear_acceleration.z")
+        {
+          new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.linear_acceleration.data.z());
+        }
+      }
+    }
+  }
+
+  return new_state_interfaces;
 }
 
 std::vector<hardware_interface::CommandInterface> MujocoSystemInterface::export_command_interfaces()
 {
-  // TODO: Keep these?
-  return std::move(command_interfaces_);
+  std::vector<hardware_interface::CommandInterface> new_command_interfaces;
+
+  // Joint command interfaces
+  for (auto& joint : joint_states_)
+  {
+    // Add command interfaces for joint hardware.
+    if (auto it = joint_hw_info_.find(joint.name); it != joint_hw_info_.end())
+    {
+      for (const auto& command_if : it->second.command_interfaces)
+      {
+        if (command_if.name.find(hardware_interface::HW_IF_POSITION) != std::string::npos)
+        {
+          new_command_interfaces.emplace_back(joint.name, hardware_interface::HW_IF_POSITION, &joint.position_command);
+        }
+        else if (command_if.name.find(hardware_interface::HW_IF_VELOCITY) != std::string::npos)
+        {
+          new_command_interfaces.emplace_back(joint.name, hardware_interface::HW_IF_VELOCITY, &joint.velocity_command);
+        }
+        else if (command_if.name == hardware_interface::HW_IF_EFFORT)
+        {
+          new_command_interfaces.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &joint.effort_command);
+        }
+      }
+    }
+  }
+
+  return new_command_interfaces;
 }
 
 hardware_interface::CallbackReturn MujocoSystemInterface::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
 {
   RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"),
               "Activating MuJoCo hardware interface and starting Simulate threads...");
+
+  // Start camera rendering loop
+  cameras_->init();
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -402,7 +570,7 @@ MujocoSystemInterface::on_deactivate(const rclcpp_lifecycle::State& /*previous_s
   RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"),
               "Deactivating MuJoCo hardware interface and shutting down Simulate...");
 
-  // TODO: Should we shut things down here or in the destructor?
+  // TODO: Should we shut mujoco things down here or in the destructor?
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -534,6 +702,9 @@ void MujocoSystemInterface::register_joints(const hardware_interface::HardwareIn
       RCLCPP_WARN_STREAM(rclcpp::get_logger("MujocoSystemInterface"), "No actuator found for joint: " << joint.name);
     }
 
+    // Add to the joint hw information map
+    joint_hw_info_.insert(std::make_pair(joint.name, joint));
+
     // save information in joint_states_ variable
     JointState joint_state;
     joint_state.name = joint.name;
@@ -586,22 +757,19 @@ void MujocoSystemInterface::register_joints(const hardware_interface::HardwareIn
       }
     };
 
-    // state interfaces
+    // Set initial values if they are set in the info
     for (const auto& state_if : joint.state_interfaces)
     {
       if (state_if.name == hardware_interface::HW_IF_POSITION)
       {
-        state_interfaces_.emplace_back(joint.name, hardware_interface::HW_IF_POSITION, &last_joint_state.position);
         last_joint_state.position = get_initial_value(state_if);
       }
       else if (state_if.name == hardware_interface::HW_IF_VELOCITY)
       {
-        state_interfaces_.emplace_back(joint.name, hardware_interface::HW_IF_VELOCITY, &last_joint_state.velocity);
         last_joint_state.velocity = get_initial_value(state_if);
       }
       else if (state_if.name == hardware_interface::HW_IF_EFFORT)
       {
-        state_interfaces_.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &last_joint_state.effort);
         last_joint_state.effort = get_initial_value(state_if);
       }
     }
@@ -612,21 +780,16 @@ void MujocoSystemInterface::register_joints(const hardware_interface::HardwareIn
     {
       if (command_if.name.find(hardware_interface::HW_IF_POSITION) != std::string::npos)
       {
-        command_interfaces_.emplace_back(joint.name, hardware_interface::HW_IF_POSITION,
-                                         &last_joint_state.position_command);
         last_joint_state.is_position_control_enabled = true;
         last_joint_state.position_command = last_joint_state.position;
       }
       else if (command_if.name.find(hardware_interface::HW_IF_VELOCITY) != std::string::npos)
       {
-        command_interfaces_.emplace_back(joint.name, hardware_interface::HW_IF_VELOCITY,
-                                         &last_joint_state.velocity_command);
         last_joint_state.is_velocity_control_enabled = true;
         last_joint_state.velocity_command = last_joint_state.velocity;
       }
       else if (command_if.name == hardware_interface::HW_IF_EFFORT)
       {
-        command_interfaces_.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &last_joint_state.effort_command);
         last_joint_state.is_effort_control_enabled = true;
         last_joint_state.effort_command = last_joint_state.effort;
       }
@@ -636,20 +799,23 @@ void MujocoSystemInterface::register_joints(const hardware_interface::HardwareIn
 
 void MujocoSystemInterface::register_sensors(const hardware_interface::HardwareInfo& hardware_info)
 {
-  // Assuming force/torque sensor end with "_fts" in the name,
-  // and IMU sensor end with "_imu" in the name
+  // We require that force/torque sensors end with "_fts" in the name,
+  // and IMU sensor end with "_imu" in the name.
   for (size_t sensor_index = 0; sensor_index < hardware_info.sensors.size(); sensor_index++)
   {
     auto sensor = hardware_info.sensors.at(sensor_index);
-    std::string sensor_name = sensor.name;
-    sensor_name = sensor_name.substr(0, sensor_name.rfind('_'));
+    const std::string sensor_name = sensor.name;
+    const auto sensor_prefix = sensor_name.substr(0, sensor_name.rfind('_'));
+
+    // Add to the sensor hw information map
+    sensors_hw_info_.insert(std::make_pair(sensor_name, sensor));
 
     if (sensor.name.find("_fts") != std::string::npos)
     {
       FTSensorData sensor_data;
       sensor_data.name = sensor_name;
-      sensor_data.force.name = sensor_name + "_force";
-      sensor_data.torque.name = sensor_name + "_torque";
+      sensor_data.force.name = sensor_prefix + "_force";
+      sensor_data.torque.name = sensor_prefix + "_torque";
 
       int force_sensor_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.force.name.c_str());
       int torque_sensor_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.torque.name.c_str());
@@ -665,44 +831,15 @@ void MujocoSystemInterface::register_sensors(const hardware_interface::HardwareI
       sensor_data.torque.mj_sensor_index = mj_model_->sensor_adr[torque_sensor_id];
 
       ft_sensor_data_.push_back(sensor_data);
-      auto& last_sensor_data = ft_sensor_data_.at(sensor_index);
-
-      for (const auto& state_if : sensor.state_interfaces)
-      {
-        if (state_if.name == "force.x")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.force.data.x());
-        }
-        else if (state_if.name == "force.y")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.force.data.y());
-        }
-        else if (state_if.name == "force.z")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.force.data.z());
-        }
-        else if (state_if.name == "torque.x")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.torque.data.x());
-        }
-        else if (state_if.name == "torque.y")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.torque.data.y());
-        }
-        else if (state_if.name == "torque.z")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.torque.data.z());
-        }
-      }
     }
 
     else if (sensor.name.find("_imu") != std::string::npos)
     {
       IMUSensorData sensor_data;
       sensor_data.name = sensor_name;
-      sensor_data.orientation.name = sensor_name + "_quat";
-      sensor_data.angular_velocity.name = sensor_name + "_gyro";
-      sensor_data.linear_acceleration.name = sensor_name + "_accel";
+      sensor_data.orientation.name = sensor_prefix + "_quat";
+      sensor_data.angular_velocity.name = sensor_prefix + "_gyro";
+      sensor_data.linear_acceleration.name = sensor_prefix + "_accel";
 
       int quat_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.orientation.name.c_str());
       int gyro_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.angular_velocity.name.c_str());
@@ -720,51 +857,6 @@ void MujocoSystemInterface::register_sensors(const hardware_interface::HardwareI
       sensor_data.linear_acceleration.mj_sensor_index = mj_model_->sensor_adr[accel_id];
 
       imu_sensor_data_.push_back(sensor_data);
-      auto& last_sensor_data = imu_sensor_data_.at(sensor_index);
-
-      for (const auto& state_if : sensor.state_interfaces)
-      {
-        if (state_if.name == "orientation.x")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.orientation.data.x());
-        }
-        else if (state_if.name == "orientation.y")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.orientation.data.y());
-        }
-        else if (state_if.name == "orientation.z")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.orientation.data.z());
-        }
-        else if (state_if.name == "orientation.w")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.orientation.data.w());
-        }
-        else if (state_if.name == "angular_velocity.x")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.angular_velocity.data.x());
-        }
-        else if (state_if.name == "angular_velocity.y")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.angular_velocity.data.y());
-        }
-        else if (state_if.name == "angular_velocity.z")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.angular_velocity.data.z());
-        }
-        else if (state_if.name == "linear_acceleration.x")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.linear_acceleration.data.x());
-        }
-        else if (state_if.name == "linear_acceleration.y")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.linear_acceleration.data.y());
-        }
-        else if (state_if.name == "linear_acceleration.z")
-        {
-          state_interfaces_.emplace_back(sensor.name, state_if.name, &last_sensor_data.linear_acceleration.data.z());
-        }
-      }
     }
   }
 }
@@ -805,7 +897,7 @@ void MujocoSystemInterface::PhysicsLoop()
 
     {
       // lock the sim mutex
-      const std::unique_lock<std::recursive_mutex> lock(sim_->mtx);
+      const std::unique_lock<std::recursive_mutex> lock(*sim_mutex_);
 
       // run only if model is present
       if (mj_model_)
@@ -911,7 +1003,22 @@ void MujocoSystemInterface::PhysicsLoop()
         }
       }
     }  // release std::lock_guard<std::mutex>
+
+    // Publish the clock
+    publish_clock();
   }
+}
+
+void MujocoSystemInterface::publish_clock()
+{
+  auto sim_time = mj_data_->time;
+  int32_t sim_time_sec = static_cast<int32_t>(std::floor(sim_time));
+  uint32_t sim_time_nanosec = static_cast<uint32_t>((sim_time - sim_time_sec) * 1e9);
+  rclcpp::Time sim_time_ros(sim_time_sec, sim_time_nanosec, RCL_ROS_TIME);
+
+  rosgraph_msgs::msg::Clock sim_time_msg;
+  sim_time_msg.clock = sim_time_ros;
+  clock_publisher_->publish(sim_time_msg);
 }
 
 }  // namespace mujoco_ros2_simulation
