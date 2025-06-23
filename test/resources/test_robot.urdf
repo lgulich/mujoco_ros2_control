@@ -122,7 +122,7 @@
   <ros2_control name="MujocoSystem" type="system">
     <hardware>
       <plugin>mujoco_ros2_simulation/MujocoSystemInterface</plugin>
-      <param name="mujoco_model">$(find mujoco_ros2_simulation)/test/resources/test_robot.xml</param>
+      <param name="mujoco_model">$(find mujoco_ros2_simulation)/resources/test_robot.xml</param>
     </hardware>
     <joint name="joint1">
       <command_interface name="position"/>

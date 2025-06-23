@@ -1,8 +1,8 @@
 find_package(ament_cmake_gtest REQUIRED)
 
 install(
-  DIRECTORY resources
-  DESTINATION share/test
+  DIRECTORY launch resources
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_add_gtest(test_plugin test_plugin.cpp)
