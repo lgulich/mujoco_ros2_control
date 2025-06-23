@@ -106,7 +106,6 @@ In the corresponding ros2_control xacro, this becomes a single sensor:
     <state_interface name="torque.x"/>
     <state_interface name="torque.y"/>
     <state_interface name="torque.z"/>
-    <param name="frame_id">fts_sensor</param>
   </sensor>
 ```
 
