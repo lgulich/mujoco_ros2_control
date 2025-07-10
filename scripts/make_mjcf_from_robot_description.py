@@ -31,7 +31,7 @@ import sys
 
 from urdf_parser_py.urdf import URDF
 
-from ament_index_python.packages import get_package_prefix
+from ament_index_python.packages import get_package_share_directory
 from xml.dom import minidom
 
 # These tags will be parsed from inputs and added to the converted MJCF
@@ -922,7 +922,7 @@ def main(args=None):
     # Converts objs for use in mujoco, adds tags, inputs, sites, and sensors to the final xml
     fix_mujoco_description(output_filepath, mesh_info_dict, mujoco_inputs, urdf, decompose_dict, request_add_free_joint)
 
-    shutil.copy2(f'{get_package_prefix("mujoco_ros2_tools")}/share/mujoco_ros2_tools/scene.xml', output_filepath)
+    shutil.copy2(f'{get_package_share_directory("mujoco_ros2_simulation")}/resources/scene.xml', output_filepath)
 
 
 if __name__ == "__main__":

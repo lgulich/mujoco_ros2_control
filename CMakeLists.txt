@@ -143,6 +143,11 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(
+  DIRECTORY resources
+  DESTINATION share/${PROJECT_NAME}
+)
+
 pluginlib_export_plugin_description_file(hardware_interface mujoco_system_interface_plugin.xml)
 
 if(BUILD_TESTING)
