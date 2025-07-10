@@ -136,6 +136,13 @@ install(TARGETS mujoco_ros2_simulation
   LIBRARY DESTINATION lib/${PROJECT_NAME}
 )
 
+# Install python tools
+install(PROGRAMS
+  scripts/find_missing_inertias.py
+  scripts/make_mjcf_from_robot_description.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 pluginlib_export_plugin_description_file(hardware_interface mujoco_system_interface_plugin.xml)
 
 if(BUILD_TESTING)
