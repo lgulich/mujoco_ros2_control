@@ -43,6 +43,8 @@ build:
         --target mujoco_ros
         --file docker/Dockerfile
         .
+  tags:
+    - dind
 
 test:
   stage: test
@@ -58,3 +60,5 @@ test:
       "
   after_script:
     - docker image rm --force mujoco_ros2_simulation:${CI_COMMIT_REF_SLUG} || true
+  tags:
+    - dind
