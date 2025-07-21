@@ -34,13 +34,8 @@ from urdf_parser_py.urdf import URDF
 from ament_index_python.packages import get_package_share_directory
 from xml.dom import minidom
 
-RAW_INPUTS_NAME = "raw_inputs"
-PROCESSED_INPUTS_NAME = "processed_inputs"
 
-# Processed input supported tags
-PROCSSED_INPUTS_DECOMPOSE_MESH = "decompose_mesh"
-PROCSSED_INPUTS_CAMERA = "camera"
-
+# Hardcoded relative paths for mujoco asset outputs
 DECOMPOSED_PATH_NAME = "decomposed"
 COMPOSED_PATH_NAME = "full"
 
@@ -463,7 +458,7 @@ def update_non_obj_assets(dom, output_filepath):
 
 def add_mujoco_inputs(dom, raw_inputs):
     """
-    Copies all elements under the RAW_INPUTS_NAME xml tag directly in the provided dom.
+    Copies all elements under the "raw_inputs" xml tag directly in the provided dom.
     This is useful for adding things like actuators, options, or defaults. But any tag that
     is supported in the MJCF can be added here.
     """
@@ -475,23 +470,6 @@ def add_mujoco_inputs(dom, raw_inputs):
             root.appendChild(imported_node)
 
     return dom
-
-
-def parse_camera_information(mujoco_inputs):
-    """
-    Returns a dictionary of cameras to be added to the final dom from the processed inputs.
-    """
-    cameras_dict = dict()
-
-    if PROCESSED_INPUTS_NAME in mujoco_inputs:
-        for mujoco_input in mujoco_inputs[PROCESSED_INPUTS_NAME]:
-            for child in mujoco_input.childNodes:
-                if child.nodeType == child.ELEMENT_NODE and child.tagName == "camera":
-                    site = child.getAttribute("site")
-                    camera = child.getAttribute("camera")
-                    cameras_dict[site] = camera
-
-    return cameras_dict
 
 
 def get_processed_mujoco_inputs(processed_inputs_element):
@@ -512,7 +490,7 @@ def get_processed_mujoco_inputs(processed_inputs_element):
             continue
 
         # Grab meshes to decompose
-        if child.tagName == PROCSSED_INPUTS_DECOMPOSE_MESH:
+        if child.tagName == "decompose_mesh":
             name = child.getAttribute("mesh_name")
             threshold = "0.05"
             if not child.hasAttribute("threshold"):
@@ -523,7 +501,7 @@ def get_processed_mujoco_inputs(processed_inputs_element):
             decompose_dict[name] = threshold
 
         # Grab cameras
-        if child.nodeType == child.ELEMENT_NODE and child.tagName == PROCSSED_INPUTS_CAMERA:
+        if child.nodeType == child.ELEMENT_NODE and child.tagName == "camera":
             site_name = child.getAttribute("site")
             camera_element = None
             for camera_child in child.childNodes:
