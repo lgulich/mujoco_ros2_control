@@ -53,7 +53,7 @@ They can also be adjusted as needed after the fact.
 "${MUJOCO_DIR}"/bin/simulate /tmp/output/scene.xml
 ```
 
-## Conversion of CKR
+## Conversion of CLR
 
 We generally recommend using the `view_robot.launch.py` from description packages to run a conversion for one of our robots.
 Though it can be as long as there is an active `/robot_description` topic with a fully processed URDF.
