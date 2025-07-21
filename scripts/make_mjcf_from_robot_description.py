@@ -399,18 +399,20 @@ def update_obj_assets(dom, output_filepath, mesh_info_dict):
 
 
 def update_non_obj_assets(dom, output_filepath):
-    # We want to take the group 1 objects that get created, and turn them into the equivalent
-    # but both in group 2 and in group 3. That means taking something like this
-    #     <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1" mesh="finger_v6"/>
-    # and turning it into this
-    #     <geom mesh="finger_v6" class="visual" pos="0 0 0" quat="0.707107 0.707107 0 0"/>
-    #     <geom mesh="finger_v6" class="collision" pos="0 0 0" quat="0.707107 0.707107 0 0"/>
-    #
-    # To do this, we need to add in class visual, and class collision to them, keep the rgba on the visual one, and
-    # get rid of the other components (type, contype, conaffinity, group, density)
-    #
-    # We can tell that we need to modify it because it will have a contype attribute attached to it (not the best way
-    # but I guess it works for now)
+    """
+    We want to take the group 1 objects that get created, and turn them into the equivalent
+    but both in group 2 and in group 3. That means taking something like this
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1" mesh="finger_v6"/>
+    and turning it into this
+        <geom mesh="finger_v6" class="visual" pos="0 0 0" quat="0.707107 0.707107 0 0"/>
+        <geom mesh="finger_v6" class="collision" pos="0 0 0" quat="0.707107 0.707107 0 0"/>
+
+    To do this, we need to add in class visual, and class collision to them, keep the rgba on the visual one, and
+    get rid of the other components (type, contype, conaffinity, group, density)
+
+    We can tell that we need to modify it because it will have a contype attribute attached to it (not the best way
+    but I guess it works for now)
+    """
 
     # Find the <worldbody> element
     worldbody = dom.getElementsByTagName("worldbody")
@@ -584,6 +586,9 @@ def parse_inputs_xml(filename=None):
 
 
 def add_free_joint(dom, urdf, joint_name="floating_base_joint"):
+    """
+    Optionally adds a free joint to the base of the robot for non-fixed based systems.
+    """
     robot = URDF.from_xml_string(urdf)
     root_link = robot.get_root()
     if root_link == "world":
@@ -599,7 +604,7 @@ def add_free_joint(dom, urdf, joint_name="floating_base_joint"):
 
     # make a free joint under that body
     free_joint = dom.createElement("freejoint")
-    free_joint.setAttribute("name", "floating_base_joint")
+    free_joint.setAttribute("name", joint_name)
     root_body.appendChild(free_joint)
 
     # move the previous body underneath the new body and joint
@@ -614,6 +619,12 @@ def add_free_joint(dom, urdf, joint_name="floating_base_joint"):
 
 
 def add_links_as_sites(urdf, dom, add_free_joint):
+    """
+    Add all links from the URDF as sites in the MJCF. This is handy as all rigid bodies are
+    mashed into a single named object in the MJCF, so we lose site names (like camera links, for instance).
+    To make it easier to connect sensors, etc, we simply add all the removed links as named
+    sites in the MJFC.
+    """
 
     def remove_epsilons(vector, epsilon=1e-8):
         return [value if abs(value) > epsilon else 0 for value in vector]
@@ -740,6 +751,9 @@ def add_cameras_from_sites(dom, cameras_dict):
 def fix_mujoco_description(
     output_filepath, mesh_info_dict, raw_inputs, urdf, decompose_dict, cameras_dict, request_add_free_joint
 ):
+    """
+    Handles all necessary post processing from the originally converted MJCF.
+    """
     full_filepath = f"{output_filepath}mujoco_description.xml"
     filename, extension = os.path.splitext(f"{output_filepath}mujoco_description.xml")
     destination_file = filename + "_formatted" + extension
@@ -781,7 +795,9 @@ def fix_mujoco_description(
 
 
 def get_urdf_from_rsp(args=None):
-    # Isolate ROS in a function
+    """
+    Pulls the robot description from the /robot_description topic, if available.
+    """
 
     import rclpy
     from rclpy.node import Node
