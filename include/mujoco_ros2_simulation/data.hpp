@@ -84,6 +84,11 @@ struct IMUSensorData
   SensorData<Eigen::Quaternion<double>> orientation;
   SensorData<Eigen::Vector3d> angular_velocity;
   SensorData<Eigen::Vector3d> linear_acceleration;
+
+  // These are currently unused but added to support controllers that require them.
+  std::vector<double> orientation_covariance;
+  std::vector<double> angular_velocity_covariance;
+  std::vector<double> linear_acceleration_covariance;
 };
 
 }  // namespace mujoco_ros2_simulation

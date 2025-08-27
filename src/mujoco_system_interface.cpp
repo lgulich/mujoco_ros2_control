@@ -556,6 +556,35 @@ std::vector<hardware_interface::StateInterface> MujocoSystemInterface::export_st
         {
           new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.linear_acceleration.data.z());
         }
+        // Add covariance interfaces
+        // TODO: Is there mujoco covariance data we could use?
+        else if (state_if.name.find("orientation_covariance") == 0)
+        {
+          // Convert the index from the end of the string, this doesn't really matter yet
+          size_t idx = std::stoul(state_if.name.substr(23));
+          if (idx < sensor.orientation_covariance.size())
+          {
+            new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.orientation_covariance[idx]);
+          }
+        }
+        else if (state_if.name.find("angular_velocity_covariance") == 0)
+        {
+          // Convert the index from the end of the string, this doesn't really matter yet
+          size_t idx = std::stoul(state_if.name.substr(28));
+          if (idx < sensor.angular_velocity_covariance.size())
+          {
+            new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.angular_velocity_covariance[idx]);
+          }
+        }
+        else if (state_if.name.find("linear_acceleration_covariance") == 0)
+        {
+          // Convert the index from the end of the string, this doesn't really matter yet
+          size_t idx = std::stoul(state_if.name.substr(31));
+          if (idx < sensor.linear_acceleration_covariance.size())
+          {
+            new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.linear_acceleration_covariance[idx]);
+          }
+        }
       }
     }
   }
@@ -903,6 +932,11 @@ void MujocoSystemInterface::register_sensors(const hardware_interface::HardwareI
       sensor_data.orientation.name = mujoco_sensor_name + "_quat";
       sensor_data.angular_velocity.name = mujoco_sensor_name + "_gyro";
       sensor_data.linear_acceleration.name = mujoco_sensor_name + "_accel";
+
+      // Initialize to all zeros as we do not use these yet.
+      sensor_data.orientation_covariance.resize(9, 0.0);
+      sensor_data.angular_velocity_covariance.resize(9, 0.0);
+      sensor_data.linear_acceleration_covariance.resize(9, 0.0);
 
       int quat_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.orientation.name.c_str());
       int gyro_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.angular_velocity.name.c_str());
