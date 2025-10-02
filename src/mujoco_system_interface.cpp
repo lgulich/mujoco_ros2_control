@@ -556,6 +556,35 @@ std::vector<hardware_interface::StateInterface> MujocoSystemInterface::export_st
         {
           new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.linear_acceleration.data.z());
         }
+        // Add covariance interfaces, these aren't currently used but some controllers require them.
+        // TODO: Is there mujoco covariance data we could use?
+        else if (state_if.name.find("orientation_covariance") == 0)
+        {
+          // Convert the index from the end of the string, this doesn't really matter yet
+          size_t idx = std::stoul(state_if.name.substr(23));
+          if (idx < sensor.orientation_covariance.size())
+          {
+            new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.orientation_covariance[idx]);
+          }
+        }
+        else if (state_if.name.find("angular_velocity_covariance") == 0)
+        {
+          // Convert the index from the end of the string, this doesn't really matter yet
+          size_t idx = std::stoul(state_if.name.substr(28));
+          if (idx < sensor.angular_velocity_covariance.size())
+          {
+            new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.angular_velocity_covariance[idx]);
+          }
+        }
+        else if (state_if.name.find("linear_acceleration_covariance") == 0)
+        {
+          // Convert the index from the end of the string, this doesn't really matter yet
+          size_t idx = std::stoul(state_if.name.substr(31));
+          if (idx < sensor.linear_acceleration_covariance.size())
+          {
+            new_state_interfaces.emplace_back(sensor.name, state_if.name, &sensor.linear_acceleration_covariance[idx]);
+          }
+        }
       }
     }
   }
@@ -617,6 +646,94 @@ MujocoSystemInterface::on_deactivate(const rclcpp_lifecycle::State& /*previous_s
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
+hardware_interface::return_type
+MujocoSystemInterface::perform_command_mode_switch(const std::vector<std::string>& start_interfaces,
+                                                   const std::vector<std::string>& stop_interfaces)
+{
+  auto update_joint_interface = [this](const std::string& interface_name, bool enabled) {
+    size_t delimiter_pos = interface_name.find('/');
+    if (delimiter_pos == std::string::npos)
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("MujocoSystemInterface"), "Invalid interface name format: %s",
+                   interface_name.c_str());
+      return;
+    }
+
+    std::string joint_name = interface_name.substr(0, delimiter_pos);
+    std::string interface_type = interface_name.substr(delimiter_pos + 1);
+
+    // Find the JointState in the vector
+    auto joint_it = std::find_if(joint_states_.begin(), joint_states_.end(),
+                                 [&joint_name](const JointState& joint) { return joint.name == joint_name; });
+
+    if (joint_it == joint_states_.end())
+    {
+      RCLCPP_WARN(rclcpp::get_logger("MujocoSystemInterface"), "Joint %s not found in joint_states_",
+                  joint_name.c_str());
+      return;
+    }
+
+    if (enabled)
+    {
+      // Only one type of control mode can be active at a time, so stop everything first then enable the
+      // requested command interface.
+      joint_it->is_position_control_enabled = false;
+      joint_it->is_velocity_control_enabled = false;
+      joint_it->is_effort_control_enabled = false;
+
+      if (interface_type == hardware_interface::HW_IF_POSITION)
+      {
+        joint_it->is_position_control_enabled = true;
+        RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"),
+                    "Joint %s: position control enabled (velocity, effort disabled)", joint_name.c_str());
+      }
+      else if (interface_type == hardware_interface::HW_IF_VELOCITY)
+      {
+        joint_it->is_velocity_control_enabled = true;
+        RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"),
+                    "Joint %s: velocity control enabled (position, effort disabled)", joint_name.c_str());
+      }
+      else if (interface_type == hardware_interface::HW_IF_EFFORT)
+      {
+        joint_it->is_effort_control_enabled = true;
+        RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"),
+                    "Joint %s: effort control enabled (position, velocity disabled)", joint_name.c_str());
+      }
+    }
+    else
+    {
+      if (interface_type == hardware_interface::HW_IF_POSITION)
+      {
+        joint_it->is_position_control_enabled = false;
+      }
+      else if (interface_type == hardware_interface::HW_IF_VELOCITY)
+      {
+        joint_it->is_velocity_control_enabled = false;
+      }
+      else if (interface_type == hardware_interface::HW_IF_EFFORT)
+      {
+        joint_it->is_effort_control_enabled = false;
+      }
+      RCLCPP_INFO(rclcpp::get_logger("MujocoSystemInterface"), "Joint %s: %s control disabled", joint_name.c_str(),
+                  interface_type.c_str());
+    }
+  };
+
+  // Disable stopped interfaces
+  for (const auto& interface : stop_interfaces)
+  {
+    update_joint_interface(interface, false);
+  }
+
+  // Enable started interfaces
+  for (const auto& interface : start_interfaces)
+  {
+    update_joint_interface(interface, true);
+  }
+
+  return hardware_interface::return_type::OK;
+}
+
 hardware_interface::return_type MujocoSystemInterface::read(const rclcpp::Time& /*time*/,
                                                             const rclcpp::Duration& /*period*/)
 {
@@ -627,7 +744,7 @@ hardware_interface::return_type MujocoSystemInterface::read(const rclcpp::Time& 
   {
     joint_state.position = mj_data_->qpos[joint_state.mj_pos_adr];
     joint_state.velocity = mj_data_->qvel[joint_state.mj_vel_adr];
-    joint_state.effort = mj_data_->actuator_force[joint_state.mj_vel_adr];
+    joint_state.effort = mj_data_->qfrc_actuator[joint_state.mj_vel_adr];
   }
 
   // IMU Sensor data
@@ -667,7 +784,7 @@ hardware_interface::return_type MujocoSystemInterface::write(const rclcpp::Time&
 {
   std::lock_guard<std::recursive_mutex> lock(*sim_mutex_);
 
-  // update mimic joint
+  // Update mimic joints
   for (auto& joint_state : joint_states_)
   {
     if (joint_state.is_mimic)
@@ -682,30 +799,20 @@ hardware_interface::return_type MujocoSystemInterface::write(const rclcpp::Time&
   }
 
   // Joint commands
+  // TODO: Support command limits. For now those ranges can be limited in the mujoco actuators themselves.
   for (auto& joint_state : joint_states_)
   {
     if (joint_state.is_position_control_enabled)
     {
       mj_data_->ctrl[joint_state.mj_actuator_id] = joint_state.position_command;
     }
-
-    if (joint_state.is_velocity_control_enabled)
+    else if (joint_state.is_velocity_control_enabled)
     {
       mj_data_->ctrl[joint_state.mj_actuator_id] = joint_state.velocity_command;
     }
-
-    if (joint_state.is_effort_control_enabled)
+    else if (joint_state.is_effort_control_enabled)
     {
-      double min_eff, max_eff;
-      min_eff = joint_state.joint_limits.has_effort_limits ? -1 * joint_state.joint_limits.max_effort :
-                                                             std::numeric_limits<double>::lowest();
-      min_eff = std::max(min_eff, joint_state.min_effort_command);
-
-      max_eff = joint_state.joint_limits.has_effort_limits ? joint_state.joint_limits.max_effort :
-                                                             std::numeric_limits<double>::max();
-      max_eff = std::min(max_eff, joint_state.max_effort_command);
-
-      mj_data_->qfrc_applied[joint_state.mj_vel_adr] = clamp(joint_state.effort_command, min_eff, max_eff);
+      mj_data_->ctrl[joint_state.mj_actuator_id] = joint_state.effort_command;
     }
   }
 
@@ -822,17 +929,14 @@ void MujocoSystemInterface::register_joints(const hardware_interface::HardwareIn
     {
       if (command_if.name.find(hardware_interface::HW_IF_POSITION) != std::string::npos)
       {
-        last_joint_state.is_position_control_enabled = true;
         last_joint_state.position_command = last_joint_state.position;
       }
       else if (command_if.name.find(hardware_interface::HW_IF_VELOCITY) != std::string::npos)
       {
-        last_joint_state.is_velocity_control_enabled = true;
         last_joint_state.velocity_command = last_joint_state.velocity;
       }
       else if (command_if.name == hardware_interface::HW_IF_EFFORT)
       {
-        last_joint_state.is_effort_control_enabled = true;
         last_joint_state.effort_command = last_joint_state.effort;
       }
     }
@@ -903,6 +1007,11 @@ void MujocoSystemInterface::register_sensors(const hardware_interface::HardwareI
       sensor_data.orientation.name = mujoco_sensor_name + "_quat";
       sensor_data.angular_velocity.name = mujoco_sensor_name + "_gyro";
       sensor_data.linear_acceleration.name = mujoco_sensor_name + "_accel";
+
+      // Initialize to all zeros as we do not use these yet.
+      sensor_data.orientation_covariance.resize(9, 0.0);
+      sensor_data.angular_velocity_covariance.resize(9, 0.0);
+      sensor_data.linear_acceleration_covariance.resize(9, 0.0);
 
       int quat_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.orientation.name.c_str());
       int gyro_id = mj_name2id(mj_model_, mjOBJ_SENSOR, sensor_data.angular_velocity.name.c_str());

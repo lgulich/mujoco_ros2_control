@@ -74,8 +74,12 @@ Just specify the plugin and point to a valid MJCF on launch:
 ### Joints
 
 Joints in the ros2_control interface are mapped to actuators defined in the MJCF.
-For now, we rely on Mujoco's PD level joint control for position and velocity command interfaces, and write directly to `qfrc_applied` for effort command interfaces.
+For now, we rely on Mujoco's PD level `ctrl` input for all actuator control.
 Refer to Mujoco's [actuation model](https://mujoco.readthedocs.io/en/stable/computation/index.html#geactuation) for more information.
+Of note, only one type of actuator per-joint can be controllable at a time, and the type CANNOT be switched during runtime (ie, switching from position to effort control is not supported).
+Users are required to manually adjust actuator types and command interfaces to ensure that they are compatible.
+
+For example a position controlled joint on the mujoco
 
 ```xml
   <actuator>
@@ -83,13 +87,12 @@ Refer to Mujoco's [actuation model](https://mujoco.readthedocs.io/en/stable/comp
   </actuator>
 ```
 
-From there, joints can be configured with position, velocity, and effort command and state interfaces.
-Initial values can be
-For example,
+Could map to the following hardware interface:
 
 ```xml
-  <joint name="join1">
+  <joint name="joint1">
     <command_interface name="position"/>
+    <!-- Initial values for state interfaces can be specified, but default to 0 if they are not. -->
     <state_interface name="position">
       <param name="initial_value">0.0</param>
     </state_interface>
@@ -97,6 +100,8 @@ For example,
     <state_interface name="effort"/>
   </joint>
 ```
+
+Switching actuator/control types on the fly is an [open issue](#13).
 
 ### Sensors
 
