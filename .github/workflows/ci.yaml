@@ -57,3 +57,32 @@ jobs:
         if: always()
         run: |
           docker image rm --force mujoco_ros2_simulation:${{ github.head_ref || github.ref_name }} || true
+
+  pixi_jazzy_build_and_test:
+    env:
+      SCCACHE_DIR: ${{ github.workspace }}/.sccache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Cache build directories and sccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.SCCACHE_DIR }}
+          key: ${{ runner.os }}-build-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ github.sha }}
+            ${{ runner.os }}-build
+      - uses: prefix-dev/setup-pixi@v0.8.14
+        with:
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          frozen: true
+          manifest-path: pixi.toml
+      - name: Build and test
+        run: |
+          pixi run setup-colcon
+          pixi run build
+          pixi run test
+          pixi run -e test-result
