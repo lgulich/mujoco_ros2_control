@@ -14,13 +14,16 @@ This interface has only been tested against ROS 2 jazzy and MuJoCo `3.3.4`.
 It should also be compatible with kilted and rolling, but we do not actively maintain those.
 We assume all required ROS dependencies have been installed either manually or with `rosdep`.
 
-A local install of MuJoCo is required to build the application, this package will not handle it for you.
-Refer to their documentation for installation procedures.
+For configuring MuJoCo, the included [CMakeLists.txt](./CMakeLists.txt) will download and install the tarfile automatically.
+As long as users have a good network connection there should not be an issue.
 
-Once installed, set the following environment variables:
+However, a local install of MuJoCo can be used to build the application by setting the following environment variables,
 
 ```bash
+# The tested version
 MUJOCO_VERSION=3.3.4
+
+# Wherever it was installed and extracted on your machine
 MUJOCO_DIR=/opt/mujoco/mujoco-3.3.4
 ```
 
@@ -313,6 +316,29 @@ ros2 launch mujoco_ros2_simulation test_robot.launch.py
 > **_NOTE:_** Rendering contexts in containers can be tricky.
 Users may need to tweak the compose file to support their specific host OS or GPUs.
 For more information refer to the comments in the compose file.
+
+## Pixi Development Workflow
+
+A [pixi](https://pixi.sh/latest/installation/) and [robostack](https://robostack.github.io) workflow is also provided.
+The environment is currently only compatible with Jazzy.
+
+To run ensure pixi is installed.
+Then,
+
+```bash
+# Setup the build environment
+pixi run setup-colcon
+
+# Build the package
+pixi run build
+
+# Run tests
+pixi run test
+
+# Launch an interactive shell and source the install
+pixi shell
+source install/setup.bash
+```
 
 ### Test Robot System
 
