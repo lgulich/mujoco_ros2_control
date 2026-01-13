@@ -198,6 +198,8 @@ def launch_setup(context, *args, **kwargs):
             {"use_sim_time": True},
             controller_parameters,
         ],
+        # humble requires a remapping of the robot description topic to function properly
+        remappings=[("~/robot_description", "/robot_description")] if os.environ.get("ROS_DISTRO") == "humble" else [],
         on_exit=Shutdown(),
     )
 
