@@ -1832,9 +1832,9 @@ void MujocoSystemInterface::register_urdf_joints(const hardware_interface::Hardw
                     joint.name.c_str());
       }
     }
-    if (!actuator_it->is_position_control_enabled && !actuator_it->is_velocity_control_enabled &&
-        !actuator_it->is_effort_control_enabled && !actuator_it->is_position_pid_control_enabled &&
-        !actuator_it->is_velocity_pid_control_enabled)
+    if (!command_interface_names.empty() && !actuator_it->is_position_control_enabled &&
+        !actuator_it->is_velocity_control_enabled && !actuator_it->is_effort_control_enabled &&
+        !actuator_it->is_position_pid_control_enabled && !actuator_it->is_velocity_pid_control_enabled)
     {
       throw std::runtime_error("Joint '" + joint.name + "' which uses actuator '" + actuator_name +
                                "' has an unsupported command interface for the specified MuJoCo actuator");
