@@ -621,19 +621,8 @@ MujocoSystemInterface::~MujocoSystemInterface()
     lidar_sensors_->close();
   }
 
-  // Stop ROS
-  if (executor_)
-  {
-    executor_->cancel();
-    executor_thread_.join();
-  }
-
-  // Remove all transmission instances
-  transmission_instances_.clear();
-  mujoco_actuator_data_.clear();
-  urdf_joint_data_.clear();
-
   // If sim_ is created and running, clean shut it down
+  // We do this first to ensure that no other threads are accessing the model/data
   if (sim_)
   {
     sim_->exitrequest.store(true);
@@ -648,6 +637,18 @@ MujocoSystemInterface::~MujocoSystemInterface()
       ui_thread_.join();
     }
   }
+
+  // Stop ROS
+  if (executor_)
+  {
+    executor_->cancel();
+    executor_thread_.join();
+  }
+
+  // Remove all transmission instances
+  transmission_instances_.clear();
+  mujoco_actuator_data_.clear();
+  urdf_joint_data_.clear();
 
   // Cleanup data and the model, if they haven't been
   if (mj_data_)
