@@ -16,6 +16,7 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(Threads REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(transmission_interface REQUIRED)
 find_package(backward_ros REQUIRED)
 
@@ -176,6 +177,7 @@ target_link_libraries(mujoco_ros2_control
   control_toolbox::control_toolbox
   ${nav_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
+  tf2_ros::tf2_ros
   transmission_interface::transmission_interface
   Eigen3::Eigen
   Threads::Threads
