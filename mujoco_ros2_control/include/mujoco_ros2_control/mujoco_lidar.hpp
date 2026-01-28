@@ -116,12 +116,7 @@ private:
   // LaserScan publishing rate in Hz
   double lidar_publish_rate_;
 
-  // Rendering options for the cameras, currently hard coded to defaults
-  mjvOption mjv_opt_;
-  mjvScene mjv_scn_;
-  mjrContext mjr_con_;
-
-  // Containers for ladar data and ROS constructs
+  // Containers for lidar data and ROS constructs
   std::vector<LidarData> lidar_sensors_;
 
   // Lidar processing thread

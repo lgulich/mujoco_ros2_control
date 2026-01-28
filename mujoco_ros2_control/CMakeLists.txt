@@ -18,6 +18,7 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(Threads REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(transmission_interface REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(backward_ros REQUIRED)
 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -167,6 +168,7 @@ set_target_properties(mujoco_ros2_control PROPERTIES
 target_link_libraries(mujoco_ros2_control
   ${MUJOCO_LIB}
   ${sensor_msgs_TARGETS}
+  ${std_srvs_TARGETS}
   mujoco::libsimulate
   controller_manager::controller_manager
   hardware_interface::hardware_interface

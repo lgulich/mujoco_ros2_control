@@ -72,7 +72,8 @@ namespace
 std::optional<std::string> get_hardware_parameter(const hardware_interface::HardwareInfo& hardware_info,
                                                   const std::string& key)
 {
-  if (auto it = hardware_info.hardware_parameters.find(key); it != hardware_info.hardware_parameters.end())
+  auto it = hardware_info.hardware_parameters.find(key);
+  if (it != hardware_info.hardware_parameters.end())
   {
     return it->second;
   }
@@ -82,11 +83,7 @@ std::optional<std::string> get_hardware_parameter(const hardware_interface::Hard
 std::string get_hardware_parameter_or(const hardware_interface::HardwareInfo& hardware_info, const std::string& key,
                                       const std::string& default_value)
 {
-  if (auto it = hardware_info.hardware_parameters.find(key); it != hardware_info.hardware_parameters.end())
-  {
-    return it->second;
-  }
-  return default_value;
+  return get_hardware_parameter(hardware_info, key).value_or(default_value);
 }
 }  // namespace
 namespace mujoco_ros2_control
@@ -214,17 +211,10 @@ public:
   }
 };
 
-// Clamps v to the lo or high value
-double clamp(double v, double lo, double hi)
-{
-  return (v < lo) ? lo : (hi < v) ? hi : v;
-}
-
 // return the path to the directory containing the current executable
 // used to determine the location of auto-loaded plugin libraries
 std::string getExecutableDir()
 {
-  constexpr char kPathSep = '/';
   const char* path = "/proc/self/exe";
 
   std::string real_path = [&]() -> std::string {
@@ -271,24 +261,15 @@ std::string getExecutableDir()
     return "";
   }
 
-  for (std::size_t i = real_path.size() - 1; i > 0; --i)
-  {
-    if (real_path.c_str()[i] == kPathSep)
-    {
-      return real_path.substr(0, i);
-    }
-  }
-
-  // don't scan through the entire file system's root
-  return "";
+  return std::filesystem::path(real_path).parent_path().string();
 }
 
 // scan for libraries in the plugin directory to load additional plugins
 void scanPluginLibraries()
 {
   // check and print plugins that are linked directly into the executable
-  int nplugin = mjp_pluginCount();
-  if (nplugin)
+  const int nplugin = mjp_pluginCount();
+  if (nplugin > 0)
   {
     std::printf("Built-in plugins:\n");
     for (int i = 0; i < nplugin; ++i)
@@ -296,8 +277,6 @@ void scanPluginLibraries()
       std::printf("    %s\n", mjp_getPluginAtSlot(i)->name);
     }
   }
-
-  const std::string sep = "/";
 
   // try to open the ${EXECDIR}/MUJOCO_PLUGIN_DIR directory
   // ${EXECDIR} is the directory containing the simulate binary itself
@@ -308,7 +287,7 @@ void scanPluginLibraries()
     return;
   }
 
-  const std::string plugin_dir = getExecutableDir() + sep + MUJOCO_PLUGIN_DIR;
+  const std::string plugin_dir = executable_dir + "/" + MUJOCO_PLUGIN_DIR;
   mj_loadAllPluginLibraries(
       plugin_dir.c_str(), +[](const char* filename, int first, int count) {
         std::printf("Plugins registered by library '%s':\n", filename);
@@ -867,6 +846,17 @@ MujocoSystemInterface::on_init(const hardware_interface::HardwareComponentInterf
   clock_publisher_ = mujoco_node_->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 1);
   clock_realtime_publisher_ =
       std::make_shared<realtime_tools::RealtimePublisher<rosgraph_msgs::msg::Clock>>(clock_publisher_);
+
+  // Create reset service
+  reset_service_ = mujoco_node_->create_service<std_srvs::srv::Trigger>(
+      "/mujoco/reset",
+      [this](const std_srvs::srv::Trigger::Request::SharedPtr /*request*/,
+             std_srvs::srv::Trigger::Response::SharedPtr response) {
+        reset_simulation();
+        response->success = true;
+        response->message = "Simulation reset to initial state";
+        RCLCPP_INFO(get_logger(), "Simulation reset to initial state");
+      });
 
   actuator_state_publisher_ =
       mujoco_node_->create_publisher<sensor_msgs::msg::JointState>("/mujoco_actuators_states", 100);
@@ -1980,16 +1970,8 @@ void MujocoSystemInterface::register_urdf_joints(const hardware_interface::Hardw
       }
     }
 
-    auto get_initial_value = [this](const hardware_interface::InterfaceInfo& interface_info) {
-      if (!interface_info.initial_value.empty())
-      {
-        double value = std::stod(interface_info.initial_value);
-        return value;
-      }
-      else
-      {
-        return 0.0;
-      }
+    auto get_initial_value = [](const hardware_interface::InterfaceInfo& interface_info) -> double {
+      return interface_info.initial_value.empty() ? 0.0 : std::stod(interface_info.initial_value);
     };
 
     // Set initial values to joint interfaces if they are set in the info
@@ -2588,6 +2570,21 @@ void MujocoSystemInterface::set_initial_pose()
       mj_data_->ctrl[actuator.mj_actuator_id] = actuator.effort_interface.state_;
     }
   }
+
+  // Copy into the control data for reads
+  mj_copyData(mj_data_control_, mj_model_, mj_data_);
+}
+
+void MujocoSystemInterface::reset_simulation()
+{
+  const std::unique_lock<std::recursive_mutex> lock(*sim_mutex_);
+
+  // Reset MuJoCo data to initial state - this resets qpos to qpos0 (model defaults),
+  // qvel to zero, time to zero, and clears all other state.
+  mj_resetData(mj_model_, mj_data_);
+
+  // Forward pass to update derived quantities
+  mj_forward(mj_model_, mj_data_);
 
   // Copy into the control data for reads
   mj_copyData(mj_data_control_, mj_model_, mj_data_);
