@@ -1480,15 +1480,27 @@ hardware_interface::return_type MujocoSystemInterface::read(const rclcpp::Time& 
     floating_base_msg_.pose.pose.orientation.y = mj_data_control_->qpos[free_joint_qpos_adr_ + 5];
     floating_base_msg_.pose.pose.orientation.z = mj_data_control_->qpos[free_joint_qpos_adr_ + 6];
 
-    // Linear Velocity
-    floating_base_msg_.twist.twist.linear.x = mj_data_control_->qvel[free_joint_qvel_adr_];
-    floating_base_msg_.twist.twist.linear.y = mj_data_control_->qvel[free_joint_qvel_adr_ + 1];
-    floating_base_msg_.twist.twist.linear.z = mj_data_control_->qvel[free_joint_qvel_adr_ + 2];
+    // Rotate velocities from world frame to body frame.
+    // MuJoCo qvel stores free-joint velocities in the world frame.
+    const mjtNum * quat = &mj_data_control_->qpos[free_joint_qpos_adr_ + 3];  // (w, x, y, z)
+    mjtNum q_conj[4];
+    mju_negQuat(q_conj, quat);
 
-    // Angular Velocity
-    floating_base_msg_.twist.twist.angular.x = mj_data_control_->qvel[free_joint_qvel_adr_ + 3];
-    floating_base_msg_.twist.twist.angular.y = mj_data_control_->qvel[free_joint_qvel_adr_ + 4];
-    floating_base_msg_.twist.twist.angular.z = mj_data_control_->qvel[free_joint_qvel_adr_ + 5];
+    const mjtNum * lin_vel_world = &mj_data_control_->qvel[free_joint_qvel_adr_];
+    mjtNum lin_vel_body[3];
+    mju_rotVecQuat(lin_vel_body, lin_vel_world, q_conj);
+
+    floating_base_msg_.twist.twist.linear.x = lin_vel_body[0];
+    floating_base_msg_.twist.twist.linear.y = lin_vel_body[1];
+    floating_base_msg_.twist.twist.linear.z = lin_vel_body[2];
+
+    const mjtNum * ang_vel_world = &mj_data_control_->qvel[free_joint_qvel_adr_ + 3];
+    mjtNum ang_vel_body[3];
+    mju_rotVecQuat(ang_vel_body, ang_vel_world, q_conj);
+
+    floating_base_msg_.twist.twist.angular.x = ang_vel_body[0];
+    floating_base_msg_.twist.twist.angular.y = ang_vel_body[1];
+    floating_base_msg_.twist.twist.angular.z = ang_vel_body[2];
 
 #if ROS_DISTRO_HUMBLE
     floating_base_realtime_publisher_->tryPublish(floating_base_msg_);
