@@ -39,9 +39,9 @@ cc_library(
         "include",
         "simulate",
     ],
-    linkopts = ["-lglfw"],
     deps = [
         ":libmujoco",
+        "@glfw//:glfw_headers",
         "@lodepng",
     ],
 )
