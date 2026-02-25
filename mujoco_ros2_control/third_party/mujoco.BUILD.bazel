@@ -1,0 +1,47 @@
+load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_import(
+    name = "libmujoco_import",
+    shared_library = "lib/libmujoco.so.3.4.0",
+)
+
+cc_library(
+    name = "libmujoco",
+    hdrs = glob(["include/mujoco/*.h"]),
+    includes = ["include"],
+    deps = [":libmujoco_import"],
+)
+
+cc_library(
+    name = "mujoco_simulate",
+    srcs = [
+        "simulate/glfw_adapter.cc",
+        "simulate/glfw_dispatch.cc",
+        "simulate/platform_ui_adapter.cc",
+        "simulate/simulate.cc",
+    ],
+    hdrs = [
+        "simulate/array_safety.h",
+        "simulate/glfw_adapter.h",
+        "simulate/glfw_dispatch.h",
+        "simulate/platform_ui_adapter.h",
+        "simulate/simulate.h",
+    ],
+    copts = [
+        "-Wno-missing-field-initializers",
+        "-Wno-unused-parameter",
+        "-Wno-sign-compare",
+        "-Wno-psabi",
+    ],
+    includes = [
+        "include",
+        "simulate",
+    ],
+    linkopts = ["-lglfw"],
+    deps = [
+        ":libmujoco",
+        "@lodepng",
+    ],
+)
