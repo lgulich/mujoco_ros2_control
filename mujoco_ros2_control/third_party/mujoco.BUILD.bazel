@@ -35,6 +35,7 @@ cc_library(
         "-Wno-sign-compare",
         "-Wno-psabi",
     ],
+    defines = ["GLFW_INCLUDE_NONE"],
     includes = [
         "include",
         "simulate",
