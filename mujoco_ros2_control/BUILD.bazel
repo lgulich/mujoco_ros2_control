@@ -1,0 +1,217 @@
+load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
+load(
+    "@isaac_ros2_rules//ros:defs.bzl",
+    "ament_index_share_files",
+    "ros2_cc_binary",
+    "ros2_cc_library",
+    "ros2_cc_shared_library",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+PKG = "//ros_ws/src/isaac_ros_deploy/isaac_deploy"
+
+MUJOCO_DIR = "mujoco/mujoco-3.4.0"
+
+# Transitive deps required by @ros2packages//hardware-interface:cc_lib.
+# Duplicated from isaac_deploy_ros2_controls/BUILD.bazel.
+HARDWARE_INTERFACE_TRANSITIVE_DEPS = [
+    PKG + "/isaac_deploy_ros2_controls/third_party/libfmt",
+    "@ros2packages//hardware-interface:cc_lib",
+    "@ros2packages//joint-limits:cc_lib",
+    "@ros2packages//libstatistics-collector:cc_lib",
+    "@ros2packages//lifecycle-msgs:cc_lib",
+    "@ros2packages//pal-statistics:cc_lib",
+    "@ros2packages//pal-statistics-msgs:cc_lib",
+    "@ros2packages//rcl-lifecycle:cc_lib",
+    "@ros2packages//rclcpp:cc_lib",
+    "@ros2packages//rclcpp-lifecycle:cc_lib",
+    "@ros2packages//realtime-tools:cc_lib",
+]
+
+# ---------------------------------------------------------------------------
+# MuJoCo pre-built library (from local distribution)
+# ---------------------------------------------------------------------------
+
+cc_import(
+    name = "libmujoco_import",
+    # Use the versioned filename so Bazel places "libmujoco.so.3.4.0" in
+    # _solib_k8, matching the SONAME that the linker records as NEEDED.
+    shared_library = MUJOCO_DIR + "/lib/libmujoco.so.3.4.0",
+)
+
+cc_library(
+    name = "libmujoco",
+    hdrs = glob([MUJOCO_DIR + "/include/mujoco/*.h"]),
+    includes = [MUJOCO_DIR + "/include"],
+    deps = [":libmujoco_import"],
+)
+
+# ---------------------------------------------------------------------------
+# GLFW (system dependency, provided by libglfw3-dev)
+# ---------------------------------------------------------------------------
+
+cc_library(
+    name = "glfw",
+    linkopts = ["-lglfw"],
+)
+
+# ---------------------------------------------------------------------------
+# MuJoCo simulate module (built from distribution source)
+# ---------------------------------------------------------------------------
+
+cc_library(
+    name = "mujoco_simulate",
+    srcs = [
+        MUJOCO_DIR + "/simulate/glfw_adapter.cc",
+        MUJOCO_DIR + "/simulate/glfw_dispatch.cc",
+        MUJOCO_DIR + "/simulate/platform_ui_adapter.cc",
+        MUJOCO_DIR + "/simulate/simulate.cc",
+    ],
+    hdrs = [
+        MUJOCO_DIR + "/simulate/array_safety.h",
+        MUJOCO_DIR + "/simulate/glfw_adapter.h",
+        MUJOCO_DIR + "/simulate/glfw_dispatch.h",
+        MUJOCO_DIR + "/simulate/platform_ui_adapter.h",
+        MUJOCO_DIR + "/simulate/simulate.h",
+    ],
+    copts = [
+        "-Wno-missing-field-initializers",
+        "-Wno-unused-parameter",
+        "-Wno-sign-compare",
+        "-Wno-psabi",
+    ],
+    includes = [
+        MUJOCO_DIR + "/include",
+        MUJOCO_DIR + "/simulate",
+    ],
+    deps = [
+        ":glfw",
+        ":libmujoco",
+        "@lodepng",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# mujoco_ros2_control library (hardware_interface plugin)
+# ---------------------------------------------------------------------------
+
+ros2_cc_library(
+    name = "mujoco_ros2_control_lib",
+    srcs = [
+        "src/mujoco_cameras.cpp",
+        "src/mujoco_lidar.cpp",
+        "src/mujoco_system_interface.cpp",
+    ],
+    hdrs = glob(["include/**/*.hpp"]),
+    copts = [
+        "-Wno-missing-field-initializers",
+        "-Wno-unused-parameter",
+        "-Wno-sign-compare",
+    ],
+    defines = ["SPDLOG_FMT_EXTERNAL"],
+    strip_include_prefix = "include",
+    deps = [
+        # libfmt MUST be first: its -isystem path needs to appear before
+        # spdlog's, which ships fmt/ wrapper headers that shadow the real
+        # fmt headers when SPDLOG_FMT_EXTERNAL is defined.
+        PKG + "/isaac_deploy_ros2_controls/third_party/libfmt",
+        ":libmujoco",
+        ":mujoco_simulate",
+        "@eigen",
+        "@ros2packages//ament-index-cpp:cc_lib",
+        "@ros2packages//control-toolbox:cc_lib",
+        "@ros2packages//controller-manager:cc_lib",
+        "@ros2packages//geometry-msgs:cc_lib",
+        "@ros2packages//nav-msgs:cc_lib",
+        "@ros2packages//pluginlib:cc_lib",
+        "@ros2packages//rosgraph-msgs:cc_lib",
+        "@ros2packages//sensor-msgs:cc_lib",
+        "@ros2packages//std-msgs:cc_lib",
+        "@ros2packages//std-srvs:cc_lib",
+        "@ros2packages//tf2-ros:cc_lib",
+        "@ros2packages//transmission-interface:cc_lib",
+        "@ros2packages//hardware-interface:cc_lib",
+        "@ros2packages//joint-limits:cc_lib",
+        "@ros2packages//libstatistics-collector:cc_lib",
+        "@ros2packages//lifecycle-msgs:cc_lib",
+        "@ros2packages//pal-statistics:cc_lib",
+        "@ros2packages//pal-statistics-msgs:cc_lib",
+        "@ros2packages//rcl-lifecycle:cc_lib",
+        "@ros2packages//rclcpp:cc_lib",
+        "@ros2packages//rclcpp-lifecycle:cc_lib",
+        "@ros2packages//realtime-tools:cc_lib",
+    ],
+)
+
+ros2_cc_shared_library(
+    name = "mujoco_ros2_control_so",
+    shared_lib_name = "mujoco_ros2_control/libmujoco_ros2_control.so",
+    # -lglfw must be explicit here: the glfw cc_library uses linkopts which
+    # don't propagate through cc_shared_library's link step.
+    user_link_flags = ["-lglfw"],
+    deps = [":mujoco_ros2_control_lib"],
+)
+
+# ---------------------------------------------------------------------------
+# ros2_control_node executable
+# ---------------------------------------------------------------------------
+
+ros2_cc_binary(
+    name = "ros2_control_node",
+    srcs = ["src/mujoco_ros2_control_node.cpp"],
+    defines = ["SPDLOG_FMT_EXTERNAL"],
+    # HARDWARE_INTERFACE_TRANSITIVE_DEPS must come first so that libfmt's
+    # -isystem path appears before spdlog's (see mujoco_ros2_control_lib).
+    #
+    # The mujoco_ros2_control plugin is loaded at runtime via pluginlib
+    # (dlopen).  All shared-library deps of the plugin must appear here so
+    # their _solib_k8 directories end up in this binary's DT_RPATH — the
+    # dynamic linker searches DT_RPATH for transitive NEEDED entries during
+    # dlopen.
+    deps = HARDWARE_INTERFACE_TRANSITIVE_DEPS + [
+        # --- mujoco_ros2_control plugin deps (hardware_interface plugin) ---
+        ":libmujoco_import",
+        "@ros2packages//ament-index-cpp:cc_lib",
+        "@ros2packages//control-toolbox:cc_lib",
+        "@ros2packages//controller-manager:cc_lib",
+        "@ros2packages//geometry-msgs:cc_lib",
+        "@ros2packages//nav-msgs:cc_lib",
+        "@ros2packages//pluginlib:cc_lib",
+        "@ros2packages//rosgraph-msgs:cc_lib",
+        "@ros2packages//sensor-msgs:cc_lib",
+        "@ros2packages//std-msgs:cc_lib",
+        "@ros2packages//std-srvs:cc_lib",
+        "@ros2packages//tf2-ros:cc_lib",
+        "@ros2packages//transmission-interface:cc_lib",
+        # --- isaac_deploy_ros2_controls plugin deps (controller_interface plugins) ---
+        # These are loaded at runtime by controller_manager via pluginlib (dlopen).
+        PKG + "/isaac_deploy_core/third_party/onnxruntime",
+        PKG + "/isaac_deploy_core/third_party/torch:libtorch",
+        PKG + "/isaac_deploy_msgs:isaac_deploy_msgs_cc",
+        "@ros2packages//controller-interface:cc_lib",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Package index
+# ---------------------------------------------------------------------------
+
+ament_index_share_files(
+    name = "mujoco_ros2_control_pkg",
+    package_name = "mujoco_ros2_control",
+    srcs = [
+        "package.xml",
+        "mujoco_system_interface_plugin.xml",
+    ],
+    libexecs = {
+        ":ros2_control_node": "ros2_control_node",
+    },
+    libraries = [
+        ":mujoco_ros2_control_so",
+    ],
+    pluginlib_plugins = {
+        "hardware_interface": "mujoco_system_interface_plugin.xml",
+    },
+    strip_prefix = "",
+)
