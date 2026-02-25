@@ -82,9 +82,8 @@ ros2_cc_library(
 ros2_cc_shared_library(
     name = "mujoco_ros2_control_so",
     shared_lib_name = "mujoco_ros2_control/libmujoco_ros2_control.so",
-    # -lglfw must be explicit here: the glfw cc_library uses linkopts which
-    # don't propagate through cc_shared_library's link step.
-    user_link_flags = ["-lglfw"],
+    # GLFW is loaded at runtime via dlopen (see glfw_dispatch.cc), so no
+    # -lglfw is needed at link time.
     deps = [":mujoco_ros2_control_lib"],
 )
 

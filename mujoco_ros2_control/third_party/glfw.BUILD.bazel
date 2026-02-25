@@ -2,9 +2,41 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# Build GLFW with the null (headless) platform backend for Linux.
+# This avoids requiring X11/Wayland/GL system headers on CI.
+# Source list derived from GLFW's CMakeLists.txt for null+Linux.
 cc_library(
     name = "glfw_headers",
-    hdrs = glob(["include/GLFW/*.h"]),
+    srcs = [
+        # Core
+        "src/context.c",
+        "src/egl_context.c",
+        "src/init.c",
+        "src/input.c",
+        "src/monitor.c",
+        "src/osmesa_context.c",
+        "src/platform.c",
+        "src/vulkan.c",
+        "src/window.c",
+        # Null platform
+        "src/null_init.c",
+        "src/null_joystick.c",
+        "src/null_monitor.c",
+        "src/null_window.c",
+        # POSIX
+        "src/posix_module.c",
+        "src/posix_poll.c",
+        "src/posix_thread.c",
+        "src/posix_time.c",
+        # Linux
+        "src/linux_joystick.c",
+    ],
+    hdrs = glob([
+        "include/GLFW/*.h",
+        "src/*.h",
+    ]),
+    copts = ["-Wno-unused-parameter"],
+    defines = ["_GLFW_NULL"],
     includes = ["include"],
-    linkopts = ["-lglfw"],
+    linkopts = ["-ldl"],
 )
