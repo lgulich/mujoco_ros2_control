@@ -104,6 +104,7 @@ ros2_cc_library(
         "src/mujoco_system_interface.cpp",
     ],
     hdrs = glob(["include/**/*.hpp"]),
+    tags = ["nolint"],
     copts = [
         "-Wno-missing-field-initializers",
         "-Wno-unused-parameter",
@@ -161,6 +162,7 @@ ros2_cc_binary(
     name = "ros2_control_node",
     srcs = ["src/mujoco_ros2_control_node.cpp"],
     defines = ["SPDLOG_FMT_EXTERNAL"],
+    tags = ["nolint"],
     # HARDWARE_INTERFACE_TRANSITIVE_DEPS must come first so that libfmt's
     # -isystem path appears before spdlog's (see mujoco_ros2_control_lib).
     #
