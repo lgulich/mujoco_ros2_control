@@ -1,21 +1,17 @@
-load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
-
-package(default_visibility = ["//visibility:public"])
-
-cc_import(
-    name = "libmujoco_import",
-    shared_library = "lib/libmujoco.so.3.4.0",
-)
-
 cc_library(
-    name = "libmujoco",
-    hdrs = glob(["include/mujoco/*.h"]),
+    name = "mujoco",
+    srcs = [
+        "lib/libmujoco.so",
+        "lib/libmujoco.so.3.4.0",
+    ],
+    hdrs = glob(["include/mujoco/**/*.h"]),
     includes = ["include"],
-    deps = [":libmujoco_import"],
+    linkopts = ["-Wl,-rpath,$$ORIGIN"],
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
-    name = "mujoco_simulate",
+    name = "simulate",
     srcs = [
         "simulate/glfw_adapter.cc",
         "simulate/glfw_dispatch.cc",
@@ -35,14 +31,14 @@ cc_library(
         "-Wno-sign-compare",
         "-Wno-psabi",
     ],
-    defines = ["GLFW_INCLUDE_NONE"],
     includes = [
         "include",
         "simulate",
     ],
+    visibility = ["//visibility:public"],
     deps = [
-        ":libmujoco",
-        "@glfw//:glfw_headers",
+        ":mujoco",
+        "@glfw",
         "@lodepng",
     ],
 )

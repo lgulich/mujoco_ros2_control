@@ -1,42 +1,53 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
-
-package(default_visibility = ["//visibility:public"])
-
-# Build GLFW with the null (headless) platform backend for Linux.
-# This avoids requiring X11/Wayland/GL system headers on CI.
-# Source list derived from GLFW's CMakeLists.txt for null+Linux.
 cc_library(
-    name = "glfw_headers",
+    name = "glfw",
     srcs = [
-        # Core
+        # Core sources
         "src/context.c",
         "src/egl_context.c",
         "src/init.c",
         "src/input.c",
         "src/monitor.c",
-        "src/osmesa_context.c",
-        "src/platform.c",
-        "src/vulkan.c",
-        "src/window.c",
-        # Null platform
         "src/null_init.c",
         "src/null_joystick.c",
         "src/null_monitor.c",
         "src/null_window.c",
-        # POSIX
+        "src/osmesa_context.c",
+        "src/platform.c",
+        "src/vulkan.c",
+        "src/window.c",
+        # Linux/X11 backends
+        "src/glx_context.c",
+        "src/linux_joystick.c",
         "src/posix_module.c",
         "src/posix_poll.c",
         "src/posix_thread.c",
         "src/posix_time.c",
-        # Linux
-        "src/linux_joystick.c",
+        "src/x11_init.c",
+        "src/x11_monitor.c",
+        "src/x11_window.c",
+        "src/xkb_unicode.c",
+    ] + glob(["src/**/*.h"]),
+    hdrs = [
+        "include/GLFW/glfw3.h",
+        "include/GLFW/glfw3native.h",
     ],
-    hdrs = glob([
-        "include/GLFW/*.h",
-        "src/*.h",
-    ]),
-    copts = ["-Wno-unused-parameter"],
-    defines = ["_GLFW_NULL"],
+    copts = [
+        "-D_GLFW_X11",
+        "-Wno-unused-parameter",
+        "-Wno-sign-compare",
+        "-Wno-missing-field-initializers",
+    ],
     includes = ["include"],
-    linkopts = ["-ldl"],
+    linkopts = [
+        "-lX11",
+        "-lXrandr",
+        "-lXinerama",
+        "-lXcursor",
+        "-lXi",
+        "-lGL",
+        "-ldl",
+        "-lpthread",
+        "-lm",
+    ],
+    visibility = ["//visibility:public"],
 )
